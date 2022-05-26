@@ -710,12 +710,16 @@ int calculaDireccion(Mv mv, int vOp){
 int ret;
 int seg;
 
- if((vOp>>16)==0)//estoy en el data segment
-     ret= vOp + (mv.reg[0] & 0x0000FFFF);
+ if( (vOp >> 16) == 0)
+    if( vOp >= ( mv.reg[0] >> 16 ) ){
+        printf("Segmentation fault");
+        exit(-1);
+    }else
+        ret = vOp + (mv.reg[0] & 0x0000FFFF); //Devuelve direccion (caso de op. directo)
  else
-    ret= vOp & 0X0000FFFF;
+    ret = vOp & 0X0000FFFF; //Devuelve el inicio del segmento que consulte
 
- return ret; //Retorno la direccion relativa al segmento al cual pertenece
+ return ret;
 }
 
 void mov(Mv* mv,int tOpA,int tOpB,int vOpA,int vOpB){
