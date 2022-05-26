@@ -1,0 +1,20 @@
+# depslib dependency file v1.0
+1650651396 source:c:\users\bauti\onedrive\escritorio\ingenieria\arquitectura de computadoras\codigos mv\mvx\ejecutor.c
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<ctype.h>
+
+1653251822 source:c:\users\bauti\onedrive\escritorio\ingenieria\arquitectura de computadoras\mvx-2\mvx\ejecutor.c
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<ctype.h>
+
+1653598124 source:c:\users\jere\desktop\mvx-2\mvx\ejecutor.c
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<ctype.h>
+	<time.h>
+
