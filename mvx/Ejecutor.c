@@ -510,7 +510,7 @@ void step(Mv* mv,char* argv[],int argc){
   int vOpA, vOpB;
   int direccionIP = 0;
 
-direccionIP = calculaDireccion(*mv, mv->reg[5]);
+  direccionIP = calculaDireccion(*mv, mv->reg[5]);
   instr = mv->mem[direccionIP]; //fetch
   DecodificarInstruccion(instr, &numOp, &codInstr, mnem); //Decodifica el numero de operandos de la instruccion
   mv->reg[5]++;
@@ -573,7 +573,6 @@ void obtenerOperando(int tOp, int vOp, char res[], int numOp){
     }else if( tOp == 3 ){ //[reg + offset]
 
        reg = vOp & 0xF;
-       printf("\n %d \n",reg);
 
        strcpy(auxS, nombreReg[reg] );
 
@@ -1003,7 +1002,7 @@ void divi(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
         mv->mem[indireccion1] /= vOpB;
       }
       else
-        printf("\n[%04d] [!] Division por cero",direccionIP-1);
+        cero = 1;
     }else if( tOpB == 2){ //add [vOpA] [vOpB]
       direccion2 = calculaDireccion(*mv, vOpB);
       if( mv->mem[direccion2] ){
@@ -1011,7 +1010,7 @@ void divi(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
         mv->mem[indireccion1] /= mv->mem[direccion2];
       }
       else
-        printf("\n[%04d] [!] Division por cero",direccionIP-1);
+        cero = 1;
     }else if( tOpB == 1 ){
        auxB = ObtenerValorDeRegistro(*mv,vOpB,2);
        if( auxB ){
@@ -1019,14 +1018,14 @@ void divi(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
          mv->mem[indireccion1] /= auxB;
        }
        else
-         printf("\n[%04d] [!] Division por cero",direccionIP-1);
+         cero = 1;
     }else{
       indireccion2 = calculaIndireccion(*mv, vOpB);
       if( mv->mem[indireccion2] ){
         mv->reg[9] = mv->mem[indireccion1] % mv->mem[indireccion2];
         mv->mem[indireccion1] /= mv->mem[indireccion2];
       }else
-        printf("\n[%04d] [!] Division por cero",direccionIP-1);
+        cero = 1;
     }
 
     modCC(mv, mv->mem[indireccion1]);
@@ -1041,7 +1040,7 @@ void divi(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
         mv->mem[direccion1] /= vOpB;
       }
       else
-        printf("\n[%04d] [!] Division por cero",direccionIP-1);
+        cero = 1;
     }else if( tOpB == 2){ //add [vOpA] [vOpB]
       direccion2 = calculaDireccion(*mv, vOpB);
       if( mv->mem[direccion2] ){
@@ -1049,7 +1048,7 @@ void divi(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
         mv->mem[direccion1] /= mv->mem[direccion2];
       }
       else
-        printf("\n[%04d] [!] Division por cero",direccionIP-1);
+        cero = 1;
     }else if( tOpB == 1 ){
        auxB = ObtenerValorDeRegistro(*mv,vOpB,2);
        if( auxB ){
@@ -1057,14 +1056,14 @@ void divi(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
          mv->mem[direccion1] /= auxB;
        }
        else
-         printf("\n[%04d] [!] Division por cero",direccionIP-1);
+         cero = 1;
     }else{
       indireccion2 = calculaIndireccion(*mv, vOpB);
       if( mv->mem[indireccion2] ){
         mv->reg[9] = mv->mem[direccion1] % mv->mem[indireccion2];
         mv->mem[direccion1] /= mv->mem[indireccion2];
       }else
-        printf("\n[%04d] [!] Division por cero",direccionIP-1);
+        cero = 1;
     }
     modCC(mv, mv->mem[direccion1]);
   }
@@ -1074,16 +1073,16 @@ void divi(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
 
       aux = ObtenerValorDeRegistro(*mv,vOpA,2);
 
-      if( tOpB == 0 ){ // add [10] 10
+      if( tOpB == 0 ){
         if( vOpB ){
           mv->reg[9] = aux % vOpB;
           aux /= vOpB;
         }
         else
           cero = 1;
-      }else if( tOpB == 2){ //add [vOpA] [vOpB]
+      }else if( tOpB == 2){
         direccion2 = calculaDireccion(*mv, vOpB);
-        if( mv->mem[direccion1] ){
+        if( mv->mem[direccion2] ){
           mv->reg[9] = aux % mv->mem[direccion2];
           aux /= mv->mem[direccion2];
         }
@@ -1110,6 +1109,11 @@ void divi(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
         AlmacenaEnRegistro(mv, vOpA, aux, 2);
         modCC(mv, aux);
       }
+    }
+
+    if( cero ){
+        printf("\n[%04d] [!] Division por cero\n",direccionIP-1);
+        exit(-1);
     }
 }
 
@@ -1292,7 +1296,7 @@ void and( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ){
       mv->mem[direccion1] &= mv->mem[indireccion2];
     }
 
-    op = mv->mem[mv->reg[0] + vOpA];
+    op = mv->mem[direccion1];
 
   }else if( tOpA == 1 ){ //! Op de registro
     aux = ObtenerValorDeRegistro(*mv, vOpA,2);
@@ -1354,7 +1358,7 @@ void or( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ){
       indireccion2 = calculaIndireccion(*mv, vOpB);
       mv->mem[direccion1] |= mv->mem[indireccion2];
     }
-    op = mv->mem[mv->reg[0] + vOpA];
+    op = mv->mem[direccion1];
 
   }else if( tOpA == 1 ){ //! Op de registro
     aux = ObtenerValorDeRegistro(*mv, vOpA,2);
@@ -1581,8 +1585,6 @@ void sysWrite( Mv* mv ){
       exit(-1);
     }else{
 
-    printf("    %d          \n",celda);
-    printf("%08X \n",mv->reg[9]);
      for( i = celda; i < celda + celdaMax ; i++ ){
 
        if( (aux & 0x800) == 0 ){ //prompt
@@ -1601,12 +1603,16 @@ void sysWrite( Mv* mv ){
             printf("%c%s ", aux2, endl );
           else
             printf(".%s",endl);
-        }else if( (aux & 0x00F) == 0x001 ) //Imprime decimal
-          printf("%d%s", mv->mem[i], endl);
-        else if( (aux & 0x00F) == 0x004) //Imprime octal
-          printf("%O%s", mv->mem[i], endl);
-        else if( (aux & 0x00F) == 0x008) //Imprime hexadecimal
-          printf("%X%s", mv->mem[i], endl);
+        }else {
+
+            if( (aux & 0x001) == 0x001 ) //Imprime decimal
+              printf(" %d%s", mv->mem[i], endl);
+            if( (aux & 0x004) == 0x004) //Imprime octal
+              printf(" %O%s", mv->mem[i], endl);
+            if( (aux & 0x008) == 0x008) //Imprime hexadecimal
+              printf(" %X%s", mv->mem[i], endl);
+        }
+
 
       }
       printf("\n");
@@ -1900,15 +1906,19 @@ int DevuelveValor(Mv mv,int tOpA,int vOpA, int numOp){
 
     int aux;
     int direccion1;
+    int indireccion1;
 
     if( tOpA == 0 ) //Inmediato
         aux = vOpA;
     else if( tOpA == 1 )//De Registro
-          aux = ObtenerValorDeRegistro(mv,vOpA,numOp);
-        else{
-          direccion1 = calculaDireccion(mv, vOpA);
-          aux = mv.mem[direccion1];
-        }
+        aux = ObtenerValorDeRegistro(mv,vOpA,numOp);
+    else if( tOpA == 2){
+        direccion1 = calculaDireccion(mv, vOpA);
+        aux = mv.mem[direccion1];
+    }else{
+        indireccion1 = calculaIndireccion(mv, vOpA);
+        aux = mv.mem[indireccion1];
+    }
 
     return aux;
 }
