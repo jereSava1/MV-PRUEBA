@@ -131,7 +131,6 @@ void cargaMemoria(Mv* mv, char *argv[]){
 
     while( fgets(linea, 34, arch) ){
         mv->mem[direccion++] = bStringtoInt(linea);
-
       }
     }else
       printf("%s", rtadoHeader);
@@ -241,7 +240,7 @@ void pop(Mv *mv, int tOpA, int vOpA){
     }
     else{
       //mv->mem[valorSP] -> tope de la pila
-      mov(mv,tOpA,1,vOpA,mv->mem[valorSP]);
+      mov(mv,tOpA,0,vOpA,mv->mem[valorSP]);
       mv->reg[6]++;
     }
 }
@@ -253,7 +252,7 @@ void push(Mv *mv, int tOpA, int vOpA){
     //Recupero el inicio del SS
     int inicioSS = mv->reg[1] & 0x0000FFFF;
 
-    //Recupero el valor de SP
+    //Recupero valor SP absoluto a partir del SP relativo
     int valorSP = calculaDireccion(*mv, mv->reg[6]);
     valorSP += inicioSS;
 
@@ -301,7 +300,8 @@ void ret(Mv *mv){
     }
     else{
       //"salta" colocando la direccion de retorno en el reg IP
-      mv->reg[5] = (0x3 << 16) | mv->mem[valorSP++];
+      mv->reg[5] = (0x3 << 16) | mv->mem[valorSP];
+      mv->reg[6]++;
     }
 
 }
@@ -326,7 +326,7 @@ void call(Mv *mv, int tOpA, int vOpA){
     else{
         mv->reg[6]--;
         valorSP--;
-        mv->mem[valorSP] = (mv->reg[5] & 0xFFFF) + 1;
+        mv->mem[valorSP] = mv->reg[5] & 0xFFFF;
         if( tOpA == 0 ){             //Inmediato
             mv->reg[5] = (0x3 << 16) | vOpA;
         }else
@@ -429,7 +429,7 @@ void Ejecutar(Mv* mv,int codInstr, int numOp,int tOpA,int tOpB,int vOpA,int vOpB
       case 0xB: //!xor
         xor(mv, tOpA, tOpB, vOpA, vOpB);
         break;
-     /* case 0xC: //!slen
+     case 0xC: //!slen
         slen(mv, tOpA, tOpB, vOpA, vOpB);
         break;
       case 0xD: //!smov
@@ -437,7 +437,7 @@ void Ejecutar(Mv* mv,int codInstr, int numOp,int tOpA,int tOpB,int vOpA,int vOpB
         break;
       case 0xE: //!scmp
         scmp(mv, tOpA, tOpB, vOpA, vOpB);
-        break;*/
+        break;
       }
   }else
   if( numOp == 1 )
@@ -1678,6 +1678,126 @@ void shr( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ){
   modCC(mv, aux);
 }
 
+void slen( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ){
+
+  int indireccion1, indireccion2;
+  int direccion1, direccion2;
+  char aux;
+  int len;
+
+  if( tOpA == 3 ){         //! opA indirecto
+
+    indireccion1 = calculaIndireccion(*mv, vOpA);
+    if( tOpB == 3 ){        //opB indirecto
+      indireccion2 = calculaIndireccion(*mv, vOpB);
+      mv->mem[indireccion1] = strlen(mv->mem[indireccion2]);
+    }else if( tOpB == 2 ){   //opB directo
+      direccion2 = calculaDireccion(*mv, vOpB);
+      mv->mem[indireccion1] = strlen(mv->mem[direccion2]);
+    }
+
+  }else if( tOpA == 2 ){   //! opA directo
+
+     direccion1 = calculaDireccion(*mv, vOpA);
+
+     if( tOpB == 3 ){       //opB indirecto
+       indireccion2 = calculaIndireccion(*mv, vOpB);
+       mv->mem[direccion1] = strlen(mv->mem[indireccion2]);
+     }else if( tOpB == 2 ){ //opB directo
+       direccion2 = calculaDireccion(*mv, vOpB);
+       mv->mem[direccion1] = strlen(mv->mem[direccion2]);
+     }
+
+  }else if( tOpA == 1 ){  //! opA de registro
+
+     if ( tOpB == 3 ){    // opB indirecto
+       indireccion2 = calculaIndireccion(*mv, vOpB);
+       len = strlen( mv->mem[indireccion2] );
+     }else if( tOpB == 2 ){  //opB directo
+       direccion2 = calculaDireccion(*mv, vOpB);
+       len = strlen( mv->mem[direccion2] );
+     }
+
+     AlmacenaEnRegistro(mv, vOpA, len, 2);
+
+  }
+
+}
+
+void smov( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ) {
+
+  int indireccion1, indireccion2;
+  int direccion1, direccion2;
+
+  if ( tOpA == 3 ){
+
+    indireccion1 = calculaIndireccion(*mv, vOpA);
+    if( tOpB == 3 ){
+      indireccion2 = calculaIndireccion(*mv, vOpB);
+      while( mv->mem[indireccion2] != '\0' ){
+        mv->mem[indireccion1++] = mv->mem[indireccion2++];
+      }
+    }else if ( tOpB == 2 ){
+      direccion2 = calculaDireccion(*mv, vOpB);
+      while( mv->mem[direccion2] != '\0' ){
+        mv->mem[indireccion1++] = mv->mem[direccion2++];
+      }
+    }
+
+  }else if( tOpA == 2 ){
+
+    direccion1 = calculaDireccion(*mv, vOpA);
+
+    if( tOpB == 3 ){
+      indireccion2 = calculaIndireccion(*mv, vOpB);
+      while( mv->mem[indireccion2] != '\0' ){
+        mv->mem[direccion1++] = mv->mem[indireccion2++];
+      }
+    }else if ( tOpB == 2 ){
+      direccion2 = calculaDireccion(*mv, vOpB);
+      while( mv->mem[direccion2] != '\0' ){
+        mv->mem[direccion1++] = mv->mem[direccion2++];
+      }
+    }
+
+  }
+
+}
+
+void scmp( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ) {
+
+  int indireccion1, indireccion2;
+  int direccion1, direccion2;
+  int rtado;
+
+  if( tOpA == 3 ){
+
+      indireccion1 = calculaIndireccion(*mv, vOpA);
+      if( tOpB == 3 ){
+        indireccion2 = calculaIndireccion(*mv, vOpB);
+        rtado = strcmp(mv->mem[indireccion1],mv->mem[indireccion2]);
+      }else if( tOpB == 2 ){
+        direccion2 = calculaDireccion(*mv, vOpB);
+        rtado = strcmp(mv->mem[indireccion1], mv->mem[direccion2]);
+      }
+      modCC(mv, rtado);
+
+  }else if( tOpA == 2 ){
+
+      direccion1 = calculaDireccion(*mv, vOpA);
+
+      if( tOpB == 3 ){
+        indireccion2 = calculaIndireccion(*mv, vOpB);
+        rtado = strcmp(mv->mem[direccion1],mv->mem[indireccion2]);
+      }else if( tOpB == 2 ){
+        direccion2 = calculaDireccion(*mv, vOpB);
+        rtado = strcmp(mv->mem[direccion1],mv->mem[direccion2]);
+      }
+      modCC(mv, rtado);
+  }
+
+}
+
 void sysWrite( Mv* mv ){
 
     u32 celda, celdaMax, aux, aux2;
@@ -1832,12 +1952,17 @@ void sysStringRead(Mv* mv){
 
 void sysStringWrite(Mv *mv){
 
-  char* str;
-  int direccion;
+  int str;
+  int segmento;
+  char letra;
   int bitPrompt, bitEndl;
 
+  segmento = mv->reg[0xD] >> 16;
+
   //Recupero posicion de inicio de string
-  str = (char*) calculaDireccion(*mv, mv->reg[0xE]);
+  str = calculaDireccion(*mv, mv->reg[0xD]);
+  //Obtengo posicion absoluta
+  str += mv->mem[segmento];
 
   //Recupero bit de prompt
   bitPrompt = (mv->reg[0xA] & 0x800) >> 11;
@@ -1846,9 +1971,13 @@ void sysStringWrite(Mv *mv){
   bitEndl = (mv->reg[0xA] & 0x100) >> 8;
 
   if( bitPrompt == 0 )
-    printf("[%d]: ", direccion);
+    printf("[%d] : ", str);
 
-  puts(str);
+  letra = mv->mem[str];
+  while( letra != '\0' ){
+    printf("%c", letra);
+    letra = mv->mem[++str];
+  }
 
   if( bitEndl == 0 )
     printf("\n");
