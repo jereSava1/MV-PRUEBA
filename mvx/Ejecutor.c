@@ -235,13 +235,13 @@ void pop(Mv *mv, int tOpA, int vOpA){
     int valorSP = (mv->reg[6] & 0x0000FFFF);
     valorSP += inicioSS;
 
-    if( valorSP >= (inicioSS + tamSS) ){
+    if( (mv->reg[6] & 0x0000FFFF) >= tamSS ){
       printf (" STACK UNDERFLOW ");
       exit(-1);
     }
     else{
-      //tOpB=2 porque seria directo y vOpB = mv->reg[6] porque paso donde apunta la pila
-      mov(mv,tOpA,2,vOpA,mv->reg[6]);
+      //mv->mem[valorSP] -> tope de la pila
+      mov(mv,tOpA,1,vOpA,mv->mem[valorSP]);
       mv->reg[6]++;
     }
 }
@@ -295,7 +295,7 @@ void ret(Mv *mv){
     int valorSP = calculaDireccion(*mv, mv->reg[6]);
     valorSP += inicioSS;
 
-    if( valorSP >= (inicioSS + tamSS) ){
+    if( (mv->reg[6] & 0x0000FFFF) >= tamSS ){
       printf (" STACK UNDERFLOW ");
       exit(-1);
     }
@@ -326,7 +326,7 @@ void call(Mv *mv, int tOpA, int vOpA){
     else{
         mv->reg[6]--;
         valorSP--;
-        mv->mem[valorSP] = mv->reg[5]++; //Guardo el IP para luego retornar
+        mv->mem[valorSP] = (mv->reg[5] & 0xFFFF) + 1;
         if( tOpA == 0 ){             //Inmediato
             mv->reg[5] = (0x3 << 16) | vOpA;
         }else
@@ -347,19 +347,20 @@ int complemento2(int vOp, int numOp ){
 
   int c2 = vOp;
 
-  if( numOp == 2 && c2 < 0 ){
+  if( (numOp == 2) && (c2 < 0) ){
     if( (vOp & 0x800) == 0x800 ) // Caso 12 bits
       c2 = vOp | 0xFFFFF000;
     else
       if( (vOp & 0x80) == 0x80 ) //Caso 8 bits
         c2 = vOp | 0xFFFFFF00;
   }
-  else if( numOp == 1 && c2 < 0 )
+  else if( (numOp == 1) && (c2 < 0) ){
     if( (vOp & 0x8000) == 0x8000 ){ //caso 16 bits
       c2 = vOp | 0xFFFF0000;
     }else
       if( (vOp & 0x80) == 0x80 ) //Caso 8 bits
         c2 = vOp | 0xFFFFFF00;
+  }
 
   return c2;
 
@@ -630,17 +631,19 @@ void obtenerOperando(int tOp, int vOp, char res[], int numOp){
     int aux=0;
     char auxS[7] = "";
     char cadOffset[4] = "";
-    int reg, offset;
+    int reg;
+    char offset; //-128...127
 
     if( tOp != 3)
       vOp = complemento2(vOp,numOp);
     else
-      offset = complemento2(vOp >> 4, numOp);
+      offset = vOp >> 4;
 
     if( tOp == 0 ){ //Inmediato
       itoa(vOp, res, 10);
 
     }else if( tOp == 1 ){ // De registro
+
       aux = (vOp & 0x30) >> 4; //Obtenemos el sector de registro
       strcpy(auxS, nombreReg[vOp & 0xF] );//obtengo nombre de reg (a,b,c,etc)
       if((vOp & 0xF)<10){
@@ -723,6 +726,8 @@ void disassembler(Mv* mv,int tOpA, int tOpB, int vOpA, int vOpB, char* opA, char
 //tipo de operandos, valor de operandos
 void DecodificarOperacion(int instr,int *tOpA,int *tOpB,int *vOpA,int *vOpB, int numOp ){
 
+  int aux;
+
   switch ( numOp ){
     case 2:
       *tOpA = (instr & 0x0C000000) >> 26;
@@ -733,6 +738,9 @@ void DecodificarOperacion(int instr,int *tOpA,int *tOpB,int *vOpA,int *vOpB, int
         *vOpA = complemento2(*vOpA,2);
       if( *tOpB == 0 )
         *vOpB = complemento2(*vOpB,2);
+      if( *tOpA == 3 ){
+
+      }
       break;
     case 1:
       *tOpA = (instr & 0x00C00000) >> 22;
@@ -774,7 +782,7 @@ u32 bStringtoInt(char* string){
 int calculaIndireccion(Mv mv, int vOp){
 
   int codReg = vOp & 0x000F;
-  int offset = vOp >> 4;
+  char offset = vOp >> 4;
   int regH = mv.reg[codReg] >> 16;
   int regL = mv.reg[codReg] & 0x0000FFFF;
   int segm;
