@@ -7,14 +7,16 @@
 const char* twoOp[] = {
     "mov","add","sub",
     "swap","mul","div","cmp",
-    "shl","shr","and","or","xor"};
+    "shl","shr","and","or","xor",
+    "slen","smov","scmp"};
 
 const char* oneOp[] = {
     "sys","jmp","jz","jp","jn",
     "jnz","jnp","jnn","ldl",
-    "ldh","rnd","not"};
+    "ldh","rnd","not",
+    "push","pop","call"};
 
-const char* noOp[] = {"stop"};
+const char* noOp[] = {"ret","stop"};
 
 const char* nombreReg[] = {
       "DS","SS","ES","CS","HP",
@@ -57,7 +59,6 @@ typedef struct Mv{
 u32 bStringtoInt(char* string);
 void cargaMemoria(Mv* mv, char *argv[]);
 void leeHeader(FILE* arch, char* rtadoHeader, Mv* mv);
-void muestraCS(Mv mv);
 void DecodificarInstruccion(int instr, int* numOp, int* codInstr,char* mnem);
 void Ejecutar(Mv* mv,int codInstr, int numOp,int tOpA,int tOpB,int vOpA,int vOpB,char mnem[],char* argv[],int argc);
 void AlmacenaEnRegistro(Mv* mv, int vOp, int dato, int numOp);
@@ -91,10 +92,10 @@ void rnd(Mv *mv, int tOpA, int vOpA);
 //void slen(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
 //void smov(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
 //void scmp(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
-//void push(Mv *mv,int tOpA,int vOpA);
-//void pop(Mv *mv,int tOpA,int vOpA);
-//void call(Mv *mv,int tOpA,int vOpA);
-//void ret();
+void push(Mv *mv,int tOpA,int vOpA);
+void pop(Mv *mv,int tOpA,int vOpA);
+void call(Mv *mv,int tOpA,int vOpA);
+void ret();
 int calculaDireccion(Mv mv, int vOp);
 int calculaIndireccion(Mv mv, int vOp);
 //void abreDisco( TDisco *listaVDD, int cantDiscos, char *nombreArch );
@@ -104,19 +105,15 @@ int main(int argc, char *argv[]) {
 
   Mv mv;
 
-
-
   cargaMemoria(&mv, argv);
   printf("Codigo: \n");
   do{
     step(&mv,argv,argc);
   }while( (0 <= (mv.reg[5] & 0x0000FFFF) ) && ( (mv.reg[5] & 0x0000FFFF) < (mv.reg[0] & 0x0000FFFF) ));
 
-
   return 0;
 
 }
-
 
 
 void cargaMemoria(Mv* mv, char *argv[]){
@@ -226,16 +223,123 @@ void leeHeader(FILE* arch, char* rtadoHeader, Mv* mv){
 }
 
 
-//Muestra todas las instrucciones cargadas en memoria
-void muestraCS(Mv mv){
+void pop(Mv *mv, int tOpA, int vOpA){
 
-  int i;
-  int direccion = calculaDireccion(mv, mv.reg[0]);
-  int tamSegm = mv.reg[0] >> 16;
-  for( i = 0; i < tamSegm; i++){
-    printf("%08X\n",mv.mem[direccion++]);
-  }
+    //Recupero el tamano del SS
+    int tamSS = (mv->reg[1] & 0xFFFF0000) >> 16;
 
+    //Recupero el inicio del SS
+    int inicioSS = (mv->reg[1] & 0x0000FFFF);
+
+    //Recupero el valor de SP
+    int valorSP = (mv->reg[6] & 0x0000FFFF);
+    valorSP += inicioSS;
+
+    if( valorSP >= (inicioSS + tamSS) ){
+      printf (" STACK UNDERFLOW ");
+      exit(-1);
+    }
+    else{
+      //tOpB=2 porque seria directo y vOpB = mv->reg[6] porque paso donde apunta la pila
+      mov(mv,tOpA,2,vOpA,mv->reg[6]);
+      mv->reg[6]++;
+    }
+}
+
+void push(Mv *mv, int tOpA, int vOpA){
+
+    int direccion;
+
+    //Recupero el inicio del SS
+    int inicioSS = mv->reg[1] & 0x0000FFFF;
+
+    //Recupero el valor de SP
+    int valorSP = calculaDireccion(*mv, mv->reg[6]);
+    valorSP += inicioSS;
+
+    //Si el SP supera el SS, stack overflow
+    if( (mv->reg[6] & 0xFFFF) == 0 ){
+      printf (" STACK OVERFLOW ");
+      exit(-1);
+    }
+    else{
+        mv->reg[6]--;       //Decremento SPs
+        valorSP--;
+        if( tOpA == 0 )     //Inmediato
+          mv->mem[valorSP] = vOpA;
+        else
+          if( tOpA == 1)    //De registro
+            mv->mem[valorSP] = ObtenerValorDeRegistro(*mv, vOpA, 1);
+          else              //Directo
+            if( tOpA == 2 ){
+              direccion = calculaDireccion(*mv, vOpA);
+              mv->mem[valorSP] = mv->mem[ direccion ];
+            }
+            else{           //Indirecto
+              direccion = calculaIndireccion(*mv, vOpA);
+              mv->mem[valorSP] = mv->mem[direccion];
+            }
+
+    }
+}
+
+void ret(Mv *mv){
+
+    //Recupero el tamano del SS
+    int tamSS = (mv->reg[1] & 0xFFFF0000) >> 16;
+
+    //Recupero el inicio del SS
+    int inicioSS = (mv->reg[1] & 0x0000FFFF);
+
+    //Recupero el valor de SP
+    int valorSP = calculaDireccion(*mv, mv->reg[6]);
+    valorSP += inicioSS;
+
+    if( valorSP >= (inicioSS + tamSS) ){
+      printf (" STACK UNDERFLOW ");
+      exit(-1);
+    }
+    else{
+      //"salta" colocando la direccion de retorno en el reg IP
+      mv->reg[5] = (0x3 << 16) | mv->mem[valorSP++];
+    }
+
+}
+
+void call(Mv *mv, int tOpA, int vOpA){
+
+    int direccion;
+    int indireccion;
+
+    //Recupero el inicio del SS
+    int inicioSS = mv->reg[1] & 0x0000FFFF;
+
+    //Recupero el valor de SP
+    int valorSP = calculaDireccion(*mv, mv->reg[6]);
+    valorSP += inicioSS;
+
+    //Si el SP supera el SS, stack overflow
+    if( (mv->reg[6] & 0xFFFF) == 0 ){
+      printf (" STACK OVERFLOW ");
+      exit(-1);
+    }
+    else{
+        mv->reg[6]--;
+        valorSP--;
+        mv->mem[valorSP] = mv->reg[5]++; //Guardo el IP para luego retornar
+        if( tOpA == 0 ){             //Inmediato
+            mv->reg[5] = (0x3 << 16) | vOpA;
+        }else
+            if( tOpA == 1 ){         //De registro
+                mv->reg[5] = (0x3 << 16) | ObtenerValorDeRegistro(*mv,vOpA, 1);
+            }else if( tOpA == 2 ){   //Directo
+              direccion = calculaDireccion(*mv, vOpA);
+              mv->reg[5] = (0x3 << 16) | mv->mem[direccion];
+            }else{                   //Indirecto
+              indireccion = calculaIndireccion(*mv, vOpA);
+              mv->reg[5] = (0x3 << 16) | mv->mem[indireccion];
+            }
+    }
 }
 
 //Verifica si un numero es negativo, y en caso de serlo, agrega las F faltantes a su izquierda
@@ -268,7 +372,7 @@ void DecodificarInstruccion(int instr, int* numOp, int* codInstr,char* mnem){
   if( (instr & 0xFF000000) >> 24 == 0xFF ){ //Instruccion sin operandos
     *numOp = 0;
     *codInstr = (instr & 0x00F00000) >> 20;
-    strcpy(mnem,noOp[0]);
+    strcpy(mnem,noOp[*codInstr]);
   }else
   if( (instr & 0xF0000000) >> 28 == 0xF ){ //Instruccion con 1 operando
     *numOp = 1;
@@ -383,7 +487,7 @@ void Ejecutar(Mv* mv,int codInstr, int numOp,int tOpA,int tOpB,int vOpA,int vOpB
       case 0xB: //!not
         not( mv, vOpA, tOpA );
         break;
-     /*  case 0xC: //!push
+     case 0xC: //!push
         push(mv, tOpA, vOpA);
         break;
       case 0xD: //!pop
@@ -391,12 +495,12 @@ void Ejecutar(Mv* mv,int codInstr, int numOp,int tOpA,int tOpB,int vOpA,int vOpB
         break;
       case 0xE: //!call
         call(mv, tOpA, vOpA);
-        break;*/
+        break;
     }else
       switch(codInstr){
-        //case 0x0: //!ret
-          //ret();
-          //break;
+        case 0x0: //!ret
+          ret(mv);
+          break;
         case 0x1: //!stop
           stop();
           break;
@@ -1234,7 +1338,7 @@ void cmp( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ){
       indireccion2 = calculaIndireccion(*mv, vOpB);
       sub = aux - mv->mem[indireccion2];
     }
-  }else{
+  }else if( tOpA == 3){
 
     indireccion1 = calculaIndireccion(*mv, vOpA);
     aux = mv->mem[indireccion1];
