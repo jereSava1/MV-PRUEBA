@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <unistd.h>
 
 const char* twoOp[] = {
     "mov","add","sub",
@@ -98,20 +99,245 @@ void call(Mv *mv,int tOpA,int vOpA);
 void ret();
 int calculaDireccion(Mv mv, int vOp);
 int calculaIndireccion(Mv mv, int vOp);
-//void abreDisco( TDisco *listaVDD, int cantDiscos, char *nombreArch );
-//void cargaDiscos(int argc, char *argv[], Mv *mv);
+void abreDisco( TDisco *listaVDD, int cantDiscos, char *nombreArch );
+void cargaDiscos(int argc, char *argv[], Mv *mv);
 
 int main(int argc, char *argv[]) {
 
   Mv mv;
 
   cargaMemoria(&mv, argv);
+  cargaDiscos(argc, argv, &mv);
+
   printf("Codigo: \n");
   do{
     step(&mv,argv,argc);
   }while( (0 <= (mv.reg[5] & 0x0000FFFF) ) && ( (mv.reg[5] & 0x0000FFFF) < (mv.reg[0] & 0x0000FFFF) ));
 
   return 0;
+
+}
+
+void cargaDiscos(int argc, char *argv[], Mv *mv){
+
+  int contCantDiscos = 0;
+
+  for( int i = 0; i < argc ; i++){
+    if( strstr(argv[i], ".vdd") != NULL  ){
+      abreDisco(mv->listaVDD, contCantDiscos, argv[i]);
+      contCantDiscos++;
+    }
+  }
+  mv->contDiscos = contCantDiscos;
+
+}
+
+void abreDisco( TDisco *listaVDD ,int indiceDiscos, char *nombreArch ){
+
+
+  unsigned long guidH, guidL;
+  u32 fecha, hora, tamSector, numVersion;
+  unsigned char cilindros, cabezas, sectores, tipo, relleno;
+  char tipoArch[5];
+
+  time_t t = time(NULL);
+  struct tm tm = *localtime(&t);
+
+  FILE *disco = fopen(nombreArch, "rb");
+  int existe = access(nombreArch, F_OK);
+
+  //access = 0 si el archivo existe
+
+  //Chequea existencia de archivo
+  if( existe != 0 ){
+
+    fclose(disco);
+    disco = fopen(nombreArch, "wb+");
+
+    fwrite("VDD0",sizeof("VDD0"), 1, disco);
+    numVersion = 1;
+    fwrite(&numVersion, sizeof(numVersion), 1, disco);
+    guidH = rand();
+    guidL = rand();
+    fwrite(&guidH, sizeof(guidH), 1, disco);
+    fwrite(&guidL, sizeof(guidL), 1, disco);
+    fecha = (tm.tm_year + 1900) << 16;
+    fecha |= (tm.tm_mon + 1) << 8;
+    fecha |= (tm.tm_mday + 1);
+    fwrite(&fecha, sizeof(fecha), 1, disco);
+    hora = tm.tm_hour << 12;
+    hora |= (tm.tm_min << 8);
+    hora |= (tm.tm_sec << 4);
+    fwrite(&hora, sizeof(hora), 1, disco);
+    tipo = 1;
+    fwrite(&tipo, sizeof(tipo), 1, disco);
+    cilindros = 128;
+    fwrite(&cilindros, sizeof(cilindros), 1, disco);
+    cabezas = 128;
+    fwrite(&cabezas, sizeof(cabezas), 1, disco);
+    sectores = 128;
+    fwrite(&sectores, sizeof(sectores), 1, disco);
+    tamSector = 512;
+    fwrite(&tamSector, sizeof(tamSector), 1, disco);
+    relleno = 0;
+    fwrite(&relleno,sizeof(relleno),472,disco);
+
+  }else{
+    fclose(disco);
+    disco = fopen(nombreArch, "rb+");
+  }
+
+  rewind(disco);
+  fread(tipoArch, sizeof(tipoArch), 1, disco);
+  fread(&numVersion, sizeof(numVersion), 1, disco);
+  fread(&guidH, sizeof(guidH), 1, disco);
+  fread(&guidL, sizeof(guidL), 1, disco);
+  fread(&fecha, sizeof(fecha), 1, disco);
+  fread(&hora, sizeof(hora), 1, disco);
+  fread(&tipo, sizeof(tipo), 1, disco);
+  fread(&cilindros, sizeof(cilindros), 1, disco);
+  fread(&cabezas, sizeof(cabezas), 1, disco);
+  fread(&sectores, sizeof(sectores), 1, disco);
+  fread(&tamSector, sizeof(tamSector), 1, disco);
+
+
+  strcpy(listaVDD[indiceDiscos].nombreArch, nombreArch);
+  strcpy(listaVDD[indiceDiscos].tArchivo, tipoArch);
+  listaVDD[indiceDiscos].numVersion = numVersion;
+  char guid[33] = "";
+  char auxGuid[17];
+  itoa(guidH, guid, 10);
+  itoa(guidL, auxGuid, 10);
+  strcat(guid,auxGuid);
+  strcpy(listaVDD[indiceDiscos].guid, guid);
+  listaVDD[indiceDiscos].fechaCreacion = fecha;
+  listaVDD[indiceDiscos].horaCreacion = hora;
+  listaVDD[indiceDiscos].tipo = tipo;
+  listaVDD[indiceDiscos].cilindros = cilindros;
+  listaVDD[indiceDiscos].cabezas = cabezas;
+  listaVDD[indiceDiscos].sectores = sectores;
+  listaVDD[indiceDiscos].tamSector = tamSector;
+
+}
+
+int verificaDesborde(Mv mv, int direccionInicio, int celdas){
+
+  int segmento;
+  int direccion;
+  int tamSegmento;
+
+  segmento = direccionInicio >> 16;
+
+  direccion = direccionInicio & 0xFFFF;
+
+  tamSegmento = mv.reg[segmento] >> 16;
+
+  return ((direccion + celdas) < tamSegmento);
+
+}
+
+void sysVDD(Mv *mv){
+
+  int numOp;
+  int cantSectores;
+  int numCilindro;
+  int numCabeza;
+  int numSector;
+  int numDisco;
+  int celdaInicio;
+  u32 seek;
+  int direccion;
+  char nombreArchivo[100];
+
+  //AH
+  numOp = (mv->reg[0xA] & 0x0000FF00) >> 8;
+
+  //AL
+  cantSectores = mv->reg[0xA] & 0xFF;
+
+  //CH
+  numCilindro = (mv->reg[0xC] & 0x0000FF00) >> 8;
+
+  //CL
+  numCabeza = mv->reg[0xC] & 0xFF;
+
+  //DH
+  numSector = (mv->reg[0xD] & 0x0000FF00) >> 8;
+
+  //DL
+  numDisco = mv->reg[0xD] & 0xFF;
+
+  //EBX
+  celdaInicio = mv->reg[0xB];
+
+  strcpy(nombreArchivo, mv->listaVDD[ numDisco ].nombreArch);
+
+  FILE *disco = fopen(nombreArchivo, "r+");
+
+  seek = 512 + numCilindro * mv->listaVDD[numDisco].cilindros * mv->listaVDD[numDisco].sectores * 512 + numCabeza * mv->listaVDD[numDisco].sectores * 512 + numSector * 512;
+
+  fseek(disco, seek, SEEK_SET);
+
+  if( numDisco > mv->contDiscos )
+    mv->reg[0xA] = 0x31 << 8;
+  else{
+
+    if( numOp == 0x0 ){         //Consultar el ultimo estado
+      mv->reg[0xA] = mv->listaVDD[numDisco].ultimoEstado & 0xFF00;
+    }
+
+    if( numCilindro > mv->listaVDD[numDisco].cilindros )
+      mv->listaVDD[numDisco].ultimoEstado = 0xB << 8;
+
+    else if( numCabeza > mv->listaVDD[numDisco].cabezas )
+      mv->listaVDD[numDisco].ultimoEstado = 0xC << 8;
+
+    else if( numSector > mv->listaVDD[numDisco].sectores )
+      mv->listaVDD[numDisco].ultimoEstado = 0xD << 8;
+
+    else{
+
+      if( numOp == 0x2 ){   //Leer disco
+
+        if( (seek + cantSectores * 512) > 1.074e9 )
+          mv->listaVDD[numDisco].ultimoEstado = 0xFF << 8;
+        else if( !verificaDesborde(*mv, celdaInicio, cantSectores * 128 ) ) //Como los sectores tienen 512 bytes y las celdas de memoria 4 bytes, necesitamos 128 celdas por cada sector a leer/escribir
+          mv->listaVDD[numDisco].ultimoEstado = 0x4 << 8;
+        else{
+          direccion = calculaDireccion(*mv, celdaInicio);
+          //Leo celda a celda el sector entero
+          for( int i = direccion ; i < direccion + cantSectores * 128 ; i++ ){
+            fread(mv->mem[i], 4, 1, disco);
+          }
+          mv->listaVDD[numDisco].ultimoEstado = 0;
+        }
+
+      }else if( numOp == 0x3 ){   //Escribir en disco
+
+        if( (seek + cantSectores * 512) > 1.074e9 )
+          mv->listaVDD[numDisco].ultimoEstado = 0xFF << 8;
+        else if( !verificaDesborde(*mv, celdaInicio, cantSectores * 128 ) ) //Como los sectores tienen 512 bytes y las celdas de memoria 4 bytes, necesitamos 128 celdas por cada sector a leer/escribir
+          mv->listaVDD[numDisco].ultimoEstado = 0xCC << 8;
+        else{
+          for( int i = direccion ; i < direccion + cantSectores * 128 ; i++ ){
+            fwrite(mv->mem[i], 4, 1, disco);
+          }
+          mv->listaVDD[numDisco].ultimoEstado = 0;
+       }
+
+      }
+
+      if( numOp == 0x8){    //Obtener parametros del disco
+
+        mv->reg[0xC] = mv->listaVDD[numDisco].cilindros << 8;
+        mv->reg[0xC] |= mv->listaVDD[numDisco].cabezas & 0xFF;
+        mv->reg[0xD] = mv->listaVDD[numDisco].sectores << 8;
+
+      }
+
+    }
+
+  }
 
 }
 
@@ -122,7 +348,7 @@ void cargaMemoria(Mv* mv, char *argv[]){
   char rtadoHeader[] = "";
   int direccion;
 
-  FILE* arch = fopen("salida.mv2","r");
+  FILE* arch = fopen(argv[1],"r");
 
   if( arch ){
     leeHeader(arch, rtadoHeader, mv);
@@ -2011,9 +2237,9 @@ void sys( Mv* mv, int tOpA, int vOpA ,char mnem[],char* argv[],int argc){
     sysStringWrite(mv);
   else if( vOpA == 0x7)  //! ClearScreen
     sysCls();
-  /*else if ( vOpA == 0xD ){
+  else if ( vOpA == 0xD ){
     sysVDD(mv);
-  }*/
+  }
 
 }
 
