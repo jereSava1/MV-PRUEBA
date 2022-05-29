@@ -272,7 +272,7 @@ void sysVDD(Mv *mv){
 
   strcpy(nombreArchivo, mv->listaVDD[ numDisco ].nombreArch);
 
-  FILE *disco = fopen(nombreArchivo, "r+");
+  FILE *disco = fopen(nombreArchivo, "rb+");
 
   seek = 512 + numCilindro * mv->listaVDD[numDisco].cilindros * mv->listaVDD[numDisco].sectores * 512 + numCabeza * mv->listaVDD[numDisco].sectores * 512 + numSector * 512;
 
@@ -305,12 +305,17 @@ void sysVDD(Mv *mv){
           mv->listaVDD[numDisco].ultimoEstado = 0x4 << 8;
         else{
           direccion = calculaDireccion(*mv, celdaInicio);
+          int i = direccion;
+          int dato;
           //Leo celda a celda el sector entero
           for( int i = direccion ; i < direccion + cantSectores * 128 ; i++ ){
-            fread(mv->mem[i], 4, 1, disco);
+            fread(&dato, sizeof(int), 1, disco);
+            mv->mem[i] = dato;
           }
           mv->listaVDD[numDisco].ultimoEstado = 0;
         }
+
+        fclose(disco);
 
       }else if( numOp == 0x3 ){   //Escribir en disco
 
@@ -319,11 +324,14 @@ void sysVDD(Mv *mv){
         else if( !verificaDesborde(*mv, celdaInicio, cantSectores * 128 ) ) //Como los sectores tienen 512 bytes y las celdas de memoria 4 bytes, necesitamos 128 celdas por cada sector a leer/escribir
           mv->listaVDD[numDisco].ultimoEstado = 0xCC << 8;
         else{
+          direccion = calculaDireccion(*mv, celdaInicio);
           for( int i = direccion ; i < direccion + cantSectores * 128 ; i++ ){
-            fwrite(mv->mem[i], 4, 1, disco);
+            int dato = mv->mem[i];
+            fwrite(&dato, sizeof(int), 1, disco);
           }
           mv->listaVDD[numDisco].ultimoEstado = 0;
        }
+       fclose(disco);
 
       }
 
@@ -2237,7 +2245,7 @@ void sys( Mv* mv, int tOpA, int vOpA ,char mnem[],char* argv[],int argc){
     sysStringWrite(mv);
   else if( vOpA == 0x7)  //! ClearScreen
     sysCls();
-  else if ( vOpA == 0xD ){
+  else if ( vOpA == 0xD ){//! VDD
     sysVDD(mv);
   }
 
