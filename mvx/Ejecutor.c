@@ -89,9 +89,9 @@ void falsoStep(Mv* mv,char opA[],char opB[],int i);
 int apareceFlag(char* argv[],int argc, char* flag );
 void jmp( Mv* mv,int tOpA,int vOpA );
 void rnd(Mv *mv, int tOpA, int vOpA);
-//void slen(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
-//void smov(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
-//void scmp(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
+void slen(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
+void smov(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
+void scmp(Mv *mv,int tOpA,int tOpB,int vOpA,int vOpB);
 void push(Mv *mv,int tOpA,int vOpA);
 void pop(Mv *mv,int tOpA,int vOpA);
 void call(Mv *mv,int tOpA,int vOpA);
@@ -227,12 +227,8 @@ void pop(Mv *mv, int tOpA, int vOpA){
     //Recupero el tamano del SS
     int tamSS = (mv->reg[1] & 0xFFFF0000) >> 16;
 
-    //Recupero el inicio del SS
-    int inicioSS = (mv->reg[1] & 0x0000FFFF);
-
     //Recupero el valor de SP
-    int valorSP = (mv->reg[6] & 0x0000FFFF);
-    valorSP += inicioSS;
+    int valorSP = calculaDireccion(*mv, mv->reg[6]);
 
     if( (mv->reg[6] & 0x0000FFFF) >= tamSS ){
       printf (" STACK UNDERFLOW ");
@@ -249,12 +245,11 @@ void push(Mv *mv, int tOpA, int vOpA){
 
     int direccion;
 
-    //Recupero el inicio del SS
-    int inicioSS = mv->reg[1] & 0x0000FFFF;
+    //Decremento SPs
+    mv->reg[6]--;
 
     //Recupero valor SP absoluto a partir del SP relativo
     int valorSP = calculaDireccion(*mv, mv->reg[6]);
-    valorSP += inicioSS;
 
     //Si el SP supera el SS, stack overflow
     if( (mv->reg[6] & 0xFFFF) == 0 ){
@@ -262,8 +257,7 @@ void push(Mv *mv, int tOpA, int vOpA){
       exit(-1);
     }
     else{
-        mv->reg[6]--;       //Decremento SPs
-        valorSP--;
+
         if( tOpA == 0 )     //Inmediato
           mv->mem[valorSP] = vOpA;
         else
@@ -287,12 +281,8 @@ void ret(Mv *mv){
     //Recupero el tamano del SS
     int tamSS = (mv->reg[1] & 0xFFFF0000) >> 16;
 
-    //Recupero el inicio del SS
-    int inicioSS = (mv->reg[1] & 0x0000FFFF);
-
     //Recupero el valor de SP
     int valorSP = calculaDireccion(*mv, mv->reg[6]);
-    valorSP += inicioSS;
 
     if( (mv->reg[6] & 0x0000FFFF) >= tamSS ){
       printf (" STACK UNDERFLOW ");
@@ -311,12 +301,10 @@ void call(Mv *mv, int tOpA, int vOpA){
     int direccion;
     int indireccion;
 
-    //Recupero el inicio del SS
-    int inicioSS = mv->reg[1] & 0x0000FFFF;
+    mv->reg[6]--;
 
     //Recupero el valor de SP
     int valorSP = calculaDireccion(*mv, mv->reg[6]);
-    valorSP += inicioSS;
 
     //Si el SP supera el SS, stack overflow
     if( (mv->reg[6] & 0xFFFF) == 0 ){
@@ -324,8 +312,6 @@ void call(Mv *mv, int tOpA, int vOpA){
       exit(-1);
     }
     else{
-        mv->reg[6]--;
-        valorSP--;
         mv->mem[valorSP] = mv->reg[5] & 0xFFFF;
         if( tOpA == 0 ){             //Inmediato
             mv->reg[5] = (0x3 << 16) | vOpA;
@@ -347,19 +333,14 @@ int complemento2(int vOp, int numOp ){
 
   int c2 = vOp;
 
-  if( (numOp == 2) && (c2 < 0) ){
-    if( (vOp & 0x800) == 0x800 ) // Caso 12 bits
+  //Los demas casos fueron considerados usando las variables locales
+  //del tamaño correspondiente (los de registro de 8, 16, 32)
+
+  if( (numOp == 2) && (c2 > 0) && ((vOp & 0x800) == 0x800) && ((vOp & 0xF000)  == 0) ){
       c2 = vOp | 0xFFFFF000;
-    else
-      if( (vOp & 0x80) == 0x80 ) //Caso 8 bits
-        c2 = vOp | 0xFFFFFF00;
   }
-  else if( (numOp == 1) && (c2 < 0) ){
-    if( (vOp & 0x8000) == 0x8000 ){ //caso 16 bits
+  else if( (numOp == 1) && (c2 > 0) && ((vOp & 0x8000) == 0x8000) && ((vOp & 0xF0000)  == 0) ){
       c2 = vOp | 0xFFFF0000;
-    }else
-      if( (vOp & 0x80) == 0x80 ) //Caso 8 bits
-        c2 = vOp | 0xFFFFFF00;
   }
 
   return c2;
@@ -538,6 +519,7 @@ void AlmacenaEnRegistro(Mv* mv, int vOp, int dato, int numOp){
 
   int sectorReg = (vOp & 0x30) >> 4;
   int idReg = (vOp & 0xF);
+  char regLL;
 
   /*
   Todo dato que se almacena en un registro, debe pasar por el if del complemento a 2
@@ -568,20 +550,22 @@ int ObtenerValorDeRegistro(Mv mv, int vOp, int numOp){
   int idReg = (vOp & 0xF);
 
   int valor;
+  char valorLL;
+  short int valorX;
 
   switch( sectorReg ){
     case 0:
       valor = mv.reg[idReg];
-      break;
+      return valor;
     case 1:
-      valor = mv.reg[idReg] & 0x000000FF;
-      break;
+      valorLL = mv.reg[idReg] & 0x000000FF;
+      return valorLL; //Considero caso negativo de la parte L del reg
     case 2:
-      valor = (mv.reg[idReg] & 0x0000FF00) >> 8;
-      break;
+      valorLL = (mv.reg[idReg] & 0x0000FF00) >> 8;
+      return valorLL; //Considero caso negativo de la parte H del reg
     case 3:
-      valor = mv.reg[idReg] & 0x0000FFFF;
-      break;
+      valorX = mv.reg[idReg] & 0x0000FFFF;
+      return valorX; //Considero caso negativo de la parte X del reg
   }
 
 /*
@@ -589,19 +573,19 @@ Devuelve el valor ya complementado si resulta negativa
 Cambia los ceros de la izquierda por F's,
 ya que el VALOR(variable) esta complementado, pero con ceros a la izquierda, no cumpliendo el complemento a 2 "total"
 */
-  return complemento2(valor,numOp);
+
 }
 
 void muestraInstruccion( Mv mv, int instr, int numOp, char* opA, char* opB, char* mnem ){
 
-  int direccion = calculaDireccion(mv, mv.reg[5]);
+  int direccion = calculaDireccion(mv, mv.reg[5]-1);
 
   if( numOp == 2 ){
-    printf("[%04d]:  %08X   %d: %s   %s,%s\n",direccion-1,instr,direccion,mnem,opA,opB);
+    printf("[%04d]:  %08X   %d: %s   %s,%s\n",direccion,instr,direccion,mnem,opA,opB);
   }else if( numOp == 1 ){
-    printf("[%04d]:  %08X   %d: %s   %s\n",direccion-1,instr,direccion,mnem,opA);
+    printf("[%04d]:  %08X   %d: %s   %s\n",direccion,instr,direccion,mnem,opA);
   }else{
-    printf("[%04d]:  %08X   %d: %s  \n",direccion-1,instr,direccion,mnem);
+    printf("[%04d]:  %08X   %d: %s  \n",direccion,instr,direccion,mnem);
   }
 
 }
@@ -738,9 +722,6 @@ void DecodificarOperacion(int instr,int *tOpA,int *tOpB,int *vOpA,int *vOpB, int
         *vOpA = complemento2(*vOpA,2);
       if( *tOpB == 0 )
         *vOpB = complemento2(*vOpB,2);
-      if( *tOpA == 3 ){
-
-      }
       break;
     case 1:
       *tOpA = (instr & 0x00C00000) >> 22;
@@ -819,16 +800,17 @@ int calculaIndireccion(Mv mv, int vOp){
 int calculaDireccion(Mv mv, int vOp){
 
 int ret;
-int seg;
+int seg = vOp >> 16;
+int inicio = vOp & 0xFFFF;
 
- if( (vOp >> 16) == 0)
-    if( vOp >= ( mv.reg[0] >> 16 ) ){
+ if( (vOp >> 16) < 4 ) // 0000, 0001, 0002, 0003
+    if( inicio >= ( mv.reg[seg] >> 16 ) ){
         printf("Segmentation fault");
         exit(-1);
     }else
-        ret = vOp + (mv.reg[0] & 0x0000FFFF); //Devuelve direccion (caso de op. directo)
- else
-    ret = vOp & 0X0000FFFF; //Devuelve el inicio del segmento que consulte
+        ret = inicio + (mv.reg[seg] & 0x0000FFFF); //Devuelve direccion (caso de op. directo)
+ else // Tamaño del segmento
+    ret = inicio; //Devuelve el inicio del segmento que consulte
 
  return ret;
 }
@@ -882,9 +864,9 @@ void mov(Mv* mv,int tOpA,int tOpB,int vOpA,int vOpB){
           direccion2 = calculaDireccion(*mv, vOpB);
           AlmacenaEnRegistro( mv, vOpA, mv->mem[direccion2], 2 );
         }else
-          if( tOpB == 1) //mov AX EAX
+          if( tOpB == 1){ //mov AX EAX
             AlmacenaEnRegistro( mv, vOpA, ObtenerValorDeRegistro(*mv,vOpB,2), 2 );
-          else {
+          }else {
             indireccion2 = calculaIndireccion(*mv, vOpB);
             AlmacenaEnRegistro(mv, vOpA, mv->mem[indireccion2], 2);
           }
@@ -959,10 +941,11 @@ void add(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
 void modCC( Mv* mv, int op ){
 
   mv->reg[8] = 0;
+
   if( op == 0 )      // = 0 -> Prende bit menos significativo
-    mv->reg[8] = mv->reg[8] | 0x00000001;
+    mv->reg[8] = 0x00000001;
   else if( op < 0 )  // < 0 -> Prende bit mas significativo
-    mv->reg[8] = mv->reg[8] | 0x80000000;
+    mv->reg[8] = 0x80000000;
 }
 
 void mul(Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB){
@@ -1769,30 +1752,52 @@ void scmp( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ) {
   int indireccion1, indireccion2;
   int direccion1, direccion2;
   int rtado;
+  char str1Aux[300] = "";
+  char str2Aux[300] = "";
+  int i=0;
 
   if( tOpA == 3 ){
 
       indireccion1 = calculaIndireccion(*mv, vOpA);
+      while( mv->mem[indireccion1] != '\0'){
+        str1Aux[i++] = mv->mem[indireccion1++];
+      }
+
       if( tOpB == 3 ){
         indireccion2 = calculaIndireccion(*mv, vOpB);
-        rtado = strcmp(mv->mem[indireccion1],mv->mem[indireccion2]);
+        i=0;
+        while( mv->mem[indireccion2] != '\0'){
+            str2Aux[i++] = mv->mem[indireccion2++];
+        }
       }else if( tOpB == 2 ){
         direccion2 = calculaDireccion(*mv, vOpB);
-        rtado = strcmp(mv->mem[indireccion1], mv->mem[direccion2]);
+        i=0;
+        while( mv->mem[direccion2] != '\0' ){
+            str2Aux[i++] = mv->mem[direccion2++];
+        }
       }
-      modCC(mv, rtado);
 
   }else if( tOpA == 2 ){
 
       direccion1 = calculaDireccion(*mv, vOpA);
+      while( mv->mem[direccion1] != '\0'){
+        str1Aux[i++] = mv->mem[direccion1++];
+      }
 
       if( tOpB == 3 ){
         indireccion2 = calculaIndireccion(*mv, vOpB);
-        rtado = strcmp(mv->mem[direccion1],mv->mem[indireccion2]);
+        i=0;
+        while( mv->mem[indireccion2] != '\0'){
+            str2Aux[i++] = mv->mem[indireccion2++];
+        }
       }else if( tOpB == 2 ){
         direccion2 = calculaDireccion(*mv, vOpB);
-        rtado = strcmp(mv->mem[direccion1],mv->mem[direccion2]);
+        i=0;
+        while( mv->mem[direccion2] != '\0'){
+            str2Aux[i++] = mv->mem[direccion2++];
+        }
       }
+      rtado = strcmp(str1Aux,str2Aux);
       modCC(mv, rtado);
   }
 
@@ -1911,13 +1916,14 @@ void sysStringRead(Mv* mv){
     int direccion;
     int charMax;
     int bitPrompt;
-    int HEreg, tamSegmento;
+    int HDreg, tamSegmento;
     int i;
+    int longStr;
 
     char *str;
 
     //Recupero EDX y calculo la direccion relativa al segmento correspondiente
-    direccion = calculaDireccion(*mv, mv->reg[0xE]);
+    direccion = calculaDireccion(*mv, mv->reg[0xD]);
 
     //Recupero la cantidad max de caracteres a leer
     charMax = mv->reg[0xC];
@@ -1928,17 +1934,19 @@ void sysStringRead(Mv* mv){
     bitPrompt = (mv->reg[0xA] & 0x800) >> 11;
 
     if( bitPrompt == 0 )
-      printf("[%d]: ", direccion);
+      printf("[%04d]: ", direccion);
 
     fgets(str, charMax, stdin);
 
-    //Obtengo la parte alta del registro E (me indica el segmento)
-    HEreg = mv->reg[0xE] >> 16;
+    //Obtengo la parte alta del registro D (me indica el segmento)
+    HDreg = mv->reg[0xD] >> 16;
 
     //Obtengo el tamaño del segmento
-    tamSegmento = mv->reg[HEreg] >> 16;
+    tamSegmento = mv->reg[HDreg] >> 16;
 
-    if( strlen(str) > (tamSegmento - direccion) ){
+    longStr = strlen(str);
+
+    if( longStr > (tamSegmento - direccion) ){
       printf("Segmentation fault");
       exit(-1);
     }else{
@@ -1961,8 +1969,6 @@ void sysStringWrite(Mv *mv){
 
   //Recupero posicion de inicio de string
   str = calculaDireccion(*mv, mv->reg[0xD]);
-  //Obtengo posicion absoluta
-  str += mv->mem[segmento];
 
   //Recupero bit de prompt
   bitPrompt = (mv->reg[0xA] & 0x800) >> 11;
@@ -1971,7 +1977,7 @@ void sysStringWrite(Mv *mv){
   bitEndl = (mv->reg[0xA] & 0x100) >> 8;
 
   if( bitPrompt == 0 )
-    printf("[%d] : ", str);
+    printf("[%04d]:  ",str);
 
   letra = mv->mem[str];
   while( letra != '\0' ){
@@ -2161,7 +2167,7 @@ int DevuelveValor(Mv mv,int tOpA,int vOpA, int numOp){
         aux = mv.mem[indireccion1];
     }
 
-    return aux;
+    return complemento2(aux,numOp);
 }
 
 void rnd(Mv *mv, int tOpA, int vOpA){
