@@ -388,11 +388,13 @@ void cargaRegistros(Mv* mv, int* bloquesHeader){
 
   //ES a continuacion del DS
   mv->reg[2] = (bloquesHeader[3] << 16) & 0xFFFF0000; //(H)
-  mv->reg[2] +=  bloquesHeader[1];                    //(L)
+  //InicioES = Tamaño de mi DS + Inicio de mi DS
+  mv->reg[2] +=  bloquesHeader[1] + mv->reg[0]&0xFFFF;                    //(L)
 
   //SS a continuacion del ES
   mv->reg[1] = (bloquesHeader[2] << 16) & 0xFFFF0000; //(H)
-  mv->reg[1] +=  bloquesHeader[3];                    //(L)
+  //InicioSS = Tamaño de mi ES + Inicio de mi ES
+  mv->reg[1] +=  bloquesHeader[3] + mv->reg[2]&0xFFFF;                    //(L)
 
   //Inicializacion de HP
   mv->reg[4] = 0x00020000;
@@ -790,7 +792,7 @@ int ObtenerValorDeRegistro(Mv mv, int vOp, int numOp){
   switch( sectorReg ){
     case 0:
       valor = mv.reg[idReg];
-      return valor;
+      return complemento2(valor,numOp);
     case 1:
       valorLL = mv.reg[idReg] & 0x000000FF;
       return valorLL; //Considero caso negativo de la parte L del reg
@@ -1900,17 +1902,27 @@ void slen( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ){
   int indireccion1, indireccion2;
   int direccion1, direccion2;
   char aux;
-  int len;
+  int len = 0;
 
   if( tOpA == 3 ){         //! opA indirecto
 
     indireccion1 = calculaIndireccion(*mv, vOpA);
     if( tOpB == 3 ){        //opB indirecto
       indireccion2 = calculaIndireccion(*mv, vOpB);
-      mv->mem[indireccion1] = strlen(mv->mem[indireccion2]);
+      len = 0;
+      while (mv->mem[indireccion2] != '\0') {
+        len++;
+        indireccion2++;
+      }
+      mv->mem[indireccion1] = len;
     }else if( tOpB == 2 ){   //opB directo
       direccion2 = calculaDireccion(*mv, vOpB);
-      mv->mem[indireccion1] = strlen(mv->mem[direccion2]);
+        len = 0;
+        while (mv->mem[direccion2] != '\0') {
+        len++;
+        direccion2++;
+      }
+      mv->mem[indireccion1] = len;
     }
 
   }else if( tOpA == 2 ){   //! opA directo
@@ -1919,20 +1931,38 @@ void slen( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ){
 
      if( tOpB == 3 ){       //opB indirecto
        indireccion2 = calculaIndireccion(*mv, vOpB);
-       mv->mem[direccion1] = strlen(mv->mem[indireccion2]);
+        len =0 ;
+        while (mv->mem[indireccion2] != '\0') {
+        len++;
+        indireccion2++;
+      }
+       mv->mem[direccion1] = len;
      }else if( tOpB == 2 ){ //opB directo
        direccion2 = calculaDireccion(*mv, vOpB);
-       mv->mem[direccion1] = strlen(mv->mem[direccion2]);
+        len = 0;
+        while (mv->mem[direccion2] != '\0') {
+        len++;
+        direccion2++;
+      }
+       mv->mem[direccion1] = len;
      }
 
   }else if( tOpA == 1 ){  //! opA de registro
 
      if ( tOpB == 3 ){    // opB indirecto
        indireccion2 = calculaIndireccion(*mv, vOpB);
-       len = strlen( mv->mem[indireccion2] );
+        len = 0;
+        while (mv->mem[indireccion2] != '\0') {
+        len++;
+        indireccion2++;
+        }
      }else if( tOpB == 2 ){  //opB directo
        direccion2 = calculaDireccion(*mv, vOpB);
-       len = strlen( mv->mem[direccion2] );
+        len = 0;
+        while (mv->mem[direccion2] != '\0' && mv->mem[direccion2] != '\n' ) {
+        len++;
+        direccion2++;
+      }
      }
 
      AlmacenaEnRegistro(mv, vOpA, len, 2);
@@ -1960,6 +1990,7 @@ void smov( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ) {
         mv->mem[indireccion1++] = mv->mem[direccion2++];
       }
     }
+    mv->mem[indireccion1] = '\0';
 
   }else if( tOpA == 2 ){
 
@@ -1977,6 +2008,7 @@ void smov( Mv* mv, int tOpA, int tOpB, int vOpA, int vOpB ) {
       }
     }
 
+    mv->mem[direccion1] = '\0';
   }
 
 }
@@ -2056,7 +2088,7 @@ void sysWrite( Mv* mv ){
       exit(-1);
     }else{
 
-     for( i = celda; i < celda + celdaMax ; i++ ){
+     for( i = celda; i < celda + celdaMax - 1 ; i++ ){
 
        if( (aux & 0x800) == 0 ){ //prompt
          printf("[%04d]:",i);
@@ -2070,10 +2102,10 @@ void sysWrite( Mv* mv ){
 
         if ( (aux & 0x0F0) == 0x010 ){ //Imprime caracter
           int aux2 = mv->mem[i] & 0xFF; // 1er byte
-          if( aux2 != 127 && aux2 >= 32 && aux2 <= 255 ) //Verifico rango del ascii
-            printf("%c%s ", aux2, endl );
+          if( aux2 != 127 && ((aux2 >= 32) && (aux2 <= 255)) ) //Verifico rango del ascii
+            printf("%c%s", aux2, endl );
           else
-            printf(".%s",endl);
+            printf("%s",endl);
         }else {
 
             if( (aux & 0x001) == 0x001 ) //Imprime decimal
@@ -2185,9 +2217,11 @@ void sysStringRead(Mv* mv){
       exit(-1);
     }else{
       i = 0;
+      int aux = direccion;
       while( str[i] != '\0' ){
         mv->mem[direccion++] = str[i++];
       }
+      mv->mem[direccion] = '\0';
     }
 
 }
@@ -2213,10 +2247,8 @@ void sysStringWrite(Mv *mv){
   if( bitPrompt == 0 )
     printf("[%04d]:  ",str);
 
-  letra = mv->mem[str];
-  while( letra != '\0' ){
-    printf("%c", letra);
-    letra = mv->mem[++str];
+  while( mv->mem[str] != 0 ){
+    printf("%c", mv->mem[str++]);
   }
 
   if( bitEndl == 0 )
