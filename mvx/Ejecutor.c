@@ -2271,20 +2271,21 @@ void sysBreakpoint( Mv* mv, char* argv[],int argc,char mnem[],int llamaP){ //! S
 
   char aux[10]={""},opA[7]={""},opB[7]={""}; //max 4096#9862
   int i=0;
-  int direccionDS, direccionIP, IPinicial;
+  int direccionDS, direccionIP, IPinicial, direccion, direccion1, direccion2;
 
   if( !llamaP )
     sysC( argv, argc );
 
   if( apareceFlag( argv, argc, "-b" ) ){
-    printf("[%04d] cmd: ", mv->reg[5] );//print de IP
+    direccionIP = calculaDireccion(*mv, mv->reg[5]);
+    printf("[%04d] cmd: ", direccionIP );//print de IP
     printf("Ingresa un comando: ");
     //Scanf detiene la lecutra cuando encuentra un espacio en blanco
     //gets me permite leer hasta encontrar un salto de linea
     gets(aux);
     if( aux[0] == 'p' ){
       step(mv,argv,argc);
-      sysBreakpoint(mv, argv,argc,mnem,1);
+      sysBreakpoint(mv, argv, argc, mnem, 1);
     }else if( aux[0] == 'r' ){
     }
       else{ //Numero entero positivo
@@ -2297,10 +2298,13 @@ void sysBreakpoint( Mv* mv, char* argv[],int argc,char mnem[],int llamaP){ //! S
           token = strtok(NULL, " ");
         }
         if (cantArg == 1) {
-            printf("[%04d] %08X %d\n", dms[0], mv->mem[dms[0]],mv->mem[dms[0]]);
+            direccion = calculaDireccion(*mv, dms[0]);
+            printf("[%04d] %08X %d\n", direccion, mv->mem[direccion],mv->mem[direccion]);
         } else { //dos argumentos numericos
             if (dms[0] < dms[1]) {
-                for(int i = dms[0]; i <= dms[1]; i++ ){
+                direccion1 = calculaDireccion(*mv, dms[0]);
+                direccion2 = calculaDireccion(*mv, dms[1]);
+                for(int i = direccion1; i <= direccion2; i++ ){
                     printf("[%04d] %08X %d\n", i, mv->mem[i],mv->mem[i]);
                 }
             }
@@ -2317,7 +2321,7 @@ void sysBreakpoint( Mv* mv, char* argv[],int argc,char mnem[],int llamaP){ //! S
       falsoStep(mv,opA,opB,i); //Muestro los operandos y paso a la siguiente opeeracion sin ejecutar
       i++;
     }
-    mv->reg[5]= (0x0003 << 16) | IPinicial;
+    mv->reg[5] = (0x0003 << 16) | IPinicial;
     direccionIP = calculaDireccion(*mv, mv->reg[5]);
     printf("\nRegistros: \n");
     printf("DS =    %06d  |              |                 |                |\n",direccionDS);
