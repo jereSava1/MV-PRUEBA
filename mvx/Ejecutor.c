@@ -1040,7 +1040,7 @@ int seg = vOp >> 16;
 int inicio = vOp & 0xFFFF;
 
  if( (vOp >> 16) < 4 ) // 0000, 0001, 0002, 0003
-    if( inicio >= ( mv.reg[seg] >> 16 ) ){
+    if( inicio > ( mv.reg[seg] >> 16 ) ){
         printf("Segmentation fault");
         exit(-1);
     }else
@@ -2329,6 +2329,8 @@ void sysBreakpoint( Mv* mv, char* argv[],int argc,char mnem[],int llamaP){ //! S
           cantArg++;
           token = strtok(NULL, " ");
         }
+        printf("DMS 0 %d\n", dms[0]);
+        printf("DMS 0 %d\n", dms[1]);
         if (cantArg == 1) {
             direccion = calculaDireccion(*mv, dms[0]);
             printf("[%04d] %08X %d\n", direccion, mv->mem[direccion],mv->mem[direccion]);
@@ -2337,7 +2339,7 @@ void sysBreakpoint( Mv* mv, char* argv[],int argc,char mnem[],int llamaP){ //! S
                 direccion1 = calculaDireccion(*mv, dms[0]);
                 direccion2 = calculaDireccion(*mv, dms[1]);
                 for(int i = direccion1; i <= direccion2; i++ ){
-                    printf("[%04d] %08X %d\n", i, mv->mem[i],mv->mem[i]);
+                    printf("[%04d] %08X %c\n", i, mv->mem[i],mv->mem[i]);
                 }
             }
         }
@@ -2349,17 +2351,25 @@ void sysBreakpoint( Mv* mv, char* argv[],int argc,char mnem[],int llamaP){ //! S
     IPinicial = calculaDireccion(*mv, mv->reg[5]);
     direccionDS = calculaDireccion(*mv, mv->reg[0]);
     i=0;
-    while( i < 10 && IPinicial+i < direccionDS ){
+    while( (i < 10) && (IPinicial+i < direccionDS)  ){
+      strcpy(opA,"");
+      strcpy(opB,"");
       falsoStep(mv,opA,opB,i); //Muestro los operandos y paso a la siguiente opeeracion sin ejecutar
       i++;
     }
     mv->reg[5] = (0x0003 << 16) | IPinicial;
-    direccionIP = calculaDireccion(*mv, mv->reg[5]);
+    int direccionSS = calculaDireccion(*mv,mv->reg[1]);
+    int direccionES = calculaDireccion(*mv,mv->reg[2]);
+    int direccionCS = calculaDireccion(*mv,mv->reg[3]);
+    int direccionHP = calculaDireccion(*mv,mv->reg[4]);
+    int direccionIP = calculaDireccion(*mv, mv->reg[5]);
+    int direccionSP = calculaDireccion(*mv, mv->reg[6]);
+    int direccionBP = calculaDireccion(*mv, mv->reg[7]);
     printf("\nRegistros: \n");
-    printf("DS =    %06d  |              |                 |                |\n",direccionDS);
-    printf("                | IP =   %06d|                 |                |\n",direccionIP);
-    printf("CC  =    %06d | AC =   %06d|EAX =     %06d |EBX =     %06d|\n",mv->reg[8],mv->reg[9],mv->reg[10],mv->reg[11]);
-    printf("ECX =   %06d  |EDX =   %06d|EEX =     %06d |EFX =     %06d|\n",mv->reg[12],mv->reg[13],mv->reg[14],mv->reg[15]);
+    printf(" DS = %06d | SS = %06d | ES = %06d | CS = %06d |\n",direccionDS, direccionSS, direccionES, direccionCS );
+    printf(" HP = %06d | IP = %06d | SP = %06d | BP = %06d |\n",direccionHP, direccionIP, direccionSP, direccionBP );
+    printf(" CC = %06d | AC = %06d | EAX = %06d | EBX = %06d |\n",mv->reg[8],mv->reg[9],mv->reg[10],mv->reg[11]);
+    printf("ECX = %06d |EDX = %06d | EEX = %06d | EFX = %06d |\n",mv->reg[12],mv->reg[13],mv->reg[14],mv->reg[15]);
 
   }
 }
@@ -2381,11 +2391,14 @@ void falsoStep(Mv* mv,char opA[],char opB[],int i){ //! Sin probar
   mv->reg[5]++;
   DecodificarOperacion(instr,&tOpA,&tOpB,&vOpA,&vOpB,numOp);
   disassembler(mv, tOpA, tOpB, vOpA, vOpB, opA, opB, numOp);
-  if(i==0)
-    printf("\n>[%04d]:  %x   %d: %s   %s,%s",direccionIP-1,instr,direccionIP,mnem,opA,opB);
-  else
-    printf("\n [%04d]:  %x   %d: %s   %s,%s",direccionIP-1,instr,direccionIP,mnem,opA,opB);
+  if( strcmp(mnem, "mov") == 0 && (tOpA == 0) ){
 
+  }else{
+    if(i==0)
+      printf("\n>[%04d]:  %x   %d: %s   %s,%s\n",direccionIP,instr,direccionIP,mnem,opA,opB);
+    else
+      muestraInstruccion(*mv, instr, numOp, opA,opB,mnem);
+  }
 }
 
 //Sys%F -c -> Ejecuta el clearscreen
